@@ -93,21 +93,3 @@ Step 5: Auto Scaling and Load Balancing
 17. Load balancing: Attach to an existing load balancer; Select Choose from your load balancer target groups, name: rach-tg-hello-world Health checks (Imp): 
     Check the box for Turn on Elastic Load Balancing health checks. (ALB finds web server is broken, ASG replaces it); Click next
 19. Configure group size: Desired capacity: 2; Minimum capacity: 2; Maximum capacity: 4
-
-
-
-
-
-
-
-
-
-
-
-
-
- Assessment – 2 (ECS-Based Architecture)
-
-Containerize the Hello World application, push the image to ECR, and deploy it in private ECS. The ECS service must be exposed via an Application Load Balancer (ALB) and configured with Service Auto Scaling across Multi-AZ for high availability.
-
-Set up a private RDS instance in dedicated private subnets. The RDS database must not have public access and should be accessible only from the ECS service.
