@@ -1,0 +1,106 @@
+
+
+ Assessment – 2 (ECS-Based Architecture)
+
+Containerize the Hello World application, push the image to ECR, and deploy it in private ECS. The ECS service must be exposed via an Application Load Balancer (ALB) and configured with Service Auto Scaling across Multi-AZ for high availability.
+
+Set up a private RDS instance in dedicated private subnets. The RDS database must not have public access and should be accessible only from the ECS service.
+
+
+Sol:
+Step 1: Local System Setup
+1. Docker Desktop: Make sure docker is installed on your PC by checking on Windows PowerShell:  docker --version
+2. AWS CLI: Make sure AWS CLI is installed on your PC by checking on Windows PowerShell: aws --version
+3. Configure the AWS CLI by running aws configure on the PowerShell. If you have not created the access and secret keys, do the following steps:
+   3.1 Navigate to IAM Console > Users > Create User. User name: ecs-admin-temp. Check Provide user access to the AWS Management Console (Opt). Click Next.
+   3.2 Attach Permissions >  Select AdministratorAccess. Click Next. Create user. (This is temporary)
+   3.3 Click on the newly created user > Security Credential > Access keys. Choose Command Line Client (CLI). Check confirmation box. Create access key.
+4. Now use the access and secret keys on your PowerShell terminal. Region: ap-south-1. Output format: json.
+
+
+
+Step 2: Hello World App
+Create the App Folder: First check the path by using pwd and make sure the path is your user directory (i.e. C:\Users\<your_username>\projects). In order to change use cd $HOME. 
+   2.1 Once navigated to the user directory make a directory named projects and change it: mkdir projects ; cd projects
+   2.2 Repeat the above steps to make another directory named hello-ecs: mkdir hello-ecs; cd hello-ecs
+2. Create app.py: In the PowerShell create a notepad by the name app.py : notepad app.py
+   In the notepad run the following code: 
+   from flask import Flask
+   app = Flask(__name__)
+
+   @app.route("/")
+   def hello():
+       return "Hello World from Private ECS!"
+
+   app.run(host="0.0.0.0", port=80)
+3. Create requirements.txt: In PowerShell, type notepad requirements.txt. In this notepad type flask.
+4. Create Dockerfile:  In PowerShell, type notepad Dockerfile. In this notepad, type the following:
+   # 1. Start from a small Python image
+   FROM python:3.11-slim
+
+   # 2. Set working directory inside container
+   WORKDIR /app
+
+   # 3. Copy requirements file into container
+   COPY requirements.txt .
+
+   # 4. Install Python dependencies (Flask)
+   RUN pip install --no-cache-dir -r requirements.txt
+
+   # 5. Copy application code into container
+   COPY app.py .
+
+   # 6. Tell Docker the app listens on port 80
+   EXPOSE 80
+
+   # 7. Command to run the app
+   CMD ["python", "app.py"]
+5. Build and test locally: In PowerShell, run: docker build -t hello-ecs .
+   docker run -p 8080:80 hello-ecs
+   Open the browser: http://localhost:8080
+
+
+
+Step 3: Amazon ECR
+AWS Console > Amazon ECR > Create. 
+   3.1 Name: hello-ecs (Private rep is accessible only from your AWS account & is required for secure ECS deployments.)
+   3.2 Image mutability tag: Mutable (One can reuse latest tag)
+   3.3 Encryption settings: AES-256 (default) (Encrypts images at rest)
+   3.4 Image scanning settings: Enable Scan on push (Automatically scans images for vulnerabilities)
+   Create the repository. (Copy the Rep URL)
+2. Push image to ECR: Run the following in PowerShell: 
+   aws ecr get-login-password --region ap-south-1 
+   docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com
+
+   docker tag hello-ecs:latest <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/hello-ecs:latest
+   docker push <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/hello-ecs:latest
+
+   If the above doesn't work check if the image exists locally. In PowerShell, docker images
+   You should see hello-ecs rep and the ecr tagged image. If its not there,
+   docker tag hello-ecs:latest 123456789012.dkr.ecr.us-east-1.amazonaws.com/hello-ecs:latest
+   Recheck it by running docker images
+3. To check whether the push worked click on your ECR rep and navigate to Images. you should be seeing an image called latest.
+
+
+
+Step 4: VPC and Networking
+Create a VPC: Choose VPC only, Name: ecs-vpc, IPv4 CIDR: 10.0.0.0/16, No IPv6 CIDR block, Tenancy: Default > Create VPC.
+Enable DNS Settings: Select the VPC created > Actions > Edit VPC settings. Check Enable DNS resolution and Enable DNS hostnames. (Allows ECS & ALB to work)
+Create Subnets: Go to Subnets > Create Subnet.
+   3.1 PUBLIC SUBNET A: VPC ID: ecs-vpc, Subnet name: public-a, AZ: ap-south-1a, IPv4 VPC CIDR block: 10.0.0.0/16 (The one set for the VPC)(Same for all),
+			IPv4 subnet CIDR block: 10.0.1.0/24 (Purpose: ALB only)
+   3.2 PUBLIC SUBNET B: VPC ID: ecs-vpc, Subnet name: public-b, AZ: ap-south-1b, IPv4 subnet CIDR block: 10.0.2.0/24. (Purpose: ALB only)
+   3.3 PRIVATE ECS SUBNET A: VPC ID: ecs-vpc, Subnet name: private-ecs-a, AZ: ap-south-1a, IPv4 subnet CIDR block: 10.0.11.0/24. (Purpose:ECS tasks & EC2)
+   3.4 PRIVATE ECS SUBNET B: VPC ID: ecs-vpc, Subnet name: private-ecs-b, AZ: ap-south-1b, IPv4 subnet CIDR block: 10.0.12.0/24. (Purpose:ECS tasks & EC2)
+   3.5 PRIVATE RDS SUBNET A: VPC ID: ecs-vpc, Subnet name: private-rds-a, AZ: ap-south-1a, IPv4 subnet CIDR block: 10.0.21.0/24. (Purpose: Database)
+   3.6 PRIVATE RDS SUBNET B: VPC ID: ecs-vpc, Subnet name: private-rds-b, AZ: ap-south-1b, IPv4 subnet CIDR block: 10.0.22.0/24. (Purpose: Database)
+4. Internet Gateway (IGW): Go to Internet Gateway > Create internet gateway. Name: ecs-igw. Click Create. Now in Actions, click on Attach to VPC and select 
+   ecs-vpc. (Public subnets access internet)
+5. NAT Gateway: Name: ecs-nat, Availability mode: Zonal, Subnet: public-a, Connectivity type: Public, Elastic IP allocation: Click Allocate Elastic IP (new)
+   Click Create NAT Gateway.
+6. Route Tables: Create Route table. 
+   6.1 Public Route Table: Name: public-rt, VPC: ecs-vpc. Click Create. In Actions, click Edit Routes. Add route: Destination: 0.0.0.0/0, Target: Internet 			   Gateway (ecs-igw). In Subnet associations: Edit subnet associations: Add public-a and public-b.
+   6.2 Private Route Table: Name: private-rt, VPC: ecs-vpc. Click create. In Actions, click Edit Routes. Add route: Destination: 0.0.0.0/0, Target: NAT
+			    Gateway (ecs-nat). In Subnet associations: Edit subnet associations: Add private-ecs-a, private-ecs-b, private-rds-a and 
+			    private-rds-b.
+
