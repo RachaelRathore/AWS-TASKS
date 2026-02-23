@@ -1,0 +1,113 @@
+Bharat Assessment:
+
+The solution must include:
+
+Cost-optimized ECS task resource allocation
+Cost-optimized EC2 and RDS instance selection
+Security hardening and least privilege IAM access
+Encryption at rest and encryption in transit
+No public access to ECS tasks or RDS
+Multi-AZ deployment for high availability
+Secure method to access private EC2 instances
+Proper Security Group configuration with restricted access
+
+
+Assessment – 1 (EC2-Based Architecture)
+
+Deploy a Hello World application on a private EC2 instance and expose it through an Application Load Balancer (ALB). Configure an Auto Scaling Group (ASG) across multiple Availability Zones (Multi-AZ) to ensure high availability and fault tolerance.
+
+Additionally, set up a private RDS instance in dedicated private subnets. The RDS database must not have public access and should be accessible only from the private EC2 instances.
+
+
+Sol: 
+NOTE: All the names must be unique to avoid replication.
+
+Step 1: Creating VPC
+1. Open the VPC dashboard and click on "Create VPC"
+2. Select "VPC and more".
+3. Give a name to the VPC e.g. Hello-World-vpc.
+4. In Availability Zones, choose 2.
+5. In Public as well as private subnets, choose 2.(One per AZ)
+6. For NAT Gateway, Zonal > choose in 1 AZ (for cost saving).
+7. For VPC endpoint, keep "S3 Gateway" enabled.
+8. Create VPC.
+
+
+
+Step 2: Security Groups ("Firewalls")
+1. Go to EC2 Console and click on security group.
+2. We need to create 3 security groups.
+  2.1 For the ALB: Configure inbound traffic from HTTP(80) and HTTPS(443) ports , source being 0.0.0.0/0, outbound traffic to all traffic.(ALB-SG)
+  2.2 For EC2 instance: Configure inbound traffic from HTTP(80), source being the security group created for ALB, outbound traffic to all traffic.(App-SG)
+  2.3 For RDS: Configure inbound traffic from MySQL/Aurora(3306), source being the security group created for EC2 instance and outbound traffic to all 			traffic.(DB-SG)
+
+
+
+Step 3: RDS Database ("Vault")
+1. Go to RDS Console and click on Subnet Groups.
+2. Click Create DB Subnet Group.
+3. Name: rds-private-subnet-group; Description: Subnets for private RDS access only.; VPC: Hello-World VPC
+4. Add subnets: AZ: Select two AZs used for EC2 instances. Subnets: Select the Private Subnets associated with AZs.
+5. Launch the RDS DB: In RDS Console, Database > Create database. 
+  3.1 Choose creation method: Full configuration; Engine type: MySQL; Templates: Free Tier / Sandbox (1 instance) 
+  3.2 Settings: DB instance identifier: hello-world-db; Master username: admin; Password:(B!)Create a strong one and save it securely.
+  3.3 Instance configuration: db.t4g.micro (Use Graviton2 chips- cheaper and faster)
+  3.4 Connectivity: Compute resource: Don't connect to an EC2 compute resource; VPC: Hello-World-VPC; DB Subnet Group: rds-private-subnet-group; Public 	access: No; VPC security group: Choose existing; Existing VPC security groups: DB-SG
+
+
+Step 4: IAM Role ("ID Badge")
+1. Go to IAM Dashboard > Roles > Create Role.
+2. Trusted entity type: AWS service, Use case: EC2
+3. Permission Policies: AmazonSSMManagedInstanceCore (Allows login via browser without SSH keys)
+4. Role name: Rach-Hello-World-EC2-Role
+5. Click Create Role
+
+
+
+Step 5: Auto Scaling and Load Balancing
+1. Go to EC2 Dashboard > Launch Templates > Create launch template. (The Blueprint)
+2. Launch template name: rach-hello-world-template; Template version description: Configured for private subnet deployment.
+3. Application and OS Images: Quick Start: Amazon Linux; Choose 64-bit(Arm); Instance type: t4g.nano  (Uses graviton2 chips and logs in via console (Session    Manager) without SSH key) or t4g.micro
+4. Key Pair: Select "Don't include key pair in launch template" (Use SSM Session Manager to login through browser.)
+5. Network Settings: Security groups: App-SG; No subnet
+6. Storage: Volume 1(AMI Root): Make sure encrypted is on; Volume type: gp3; KMS key: (default) aws/ebs (Data would be unreadable if hard drive were stolen
+   physically from AWS data center)
+7. Advanced details: IAM Instance profile: Rach-Hello-World-EC2-Role (Login via console, server talks to AWS services)
+8. Detailed CloudWatch monitoring: Enable (Optional, good for seeing traffic spikes)
+9. Metadata version: V2 only (token required) (Sets HTTP token as required); Metadata response hop limit: 2
+10. User data:  #!/bin/bash
+		yum update -y
+		yum install -y httpd
+		systemctl start httpd
+		systemctl enable httpd
+		echo "<h1>Hello World from $(hostname -f)</h1>" > /var/www/html/index.html
+
+11. On EC2 console > Target Groups > Create target group.
+12. Target types: Instances; Target group name: rach-tg-hello-world; Protocol: HTTP (80); VPC: Hello-World-vpc, Skip the next steps and click on Create 
+    (Don't register instances, ASG will do)
+13. EC2 console > Load Balancers > Create > ALB. Name: rach-hello-world-alb; Scheme: Internet-facing; VPC: Hello-World-vpc; AZ and subnets: Public subnets;
+    Security groups: rach-ALB-SG.
+14. Listeners and routing: Protocol: HTTP (80); Routing action: Forward to target groups > Target group: rach-tg-hello-world
+15. Auto scaling group > Create: rach-asg-hello-world; Launch template: rach-hello-world-template; Click next
+16. VPC: Hello-World-vpc; AZ and subnets: Private; AZ distribution: Balanced best effort; Click next.
+17. Load balancing: Attach to an existing load balancer; Select Choose from your load balancer target groups, name: rach-tg-hello-world Health checks (Imp): 
+    Check the box for Turn on Elastic Load Balancing health checks. (ALB finds web server is broken, ASG replaces it); Click next
+19. Configure group size: Desired capacity: 2; Minimum capacity: 2; Maximum capacity: 4
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Assessment – 2 (ECS-Based Architecture)
+
+Containerize the Hello World application, push the image to ECR, and deploy it in private ECS. The ECS service must be exposed via an Application Load Balancer (ALB) and configured with Service Auto Scaling across Multi-AZ for high availability.
+
+Set up a private RDS instance in dedicated private subnets. The RDS database must not have public access and should be accessible only from the ECS service.
