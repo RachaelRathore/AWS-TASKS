@@ -1,0 +1,49 @@
+Assessment -2 (Block storage)
+Resizing root disks and attaching extra data disks (You can perform this on any cloud, AWS/GCP)
+Task:
+Deploy a small Linux VM with a 10 GB root disk.
+Increase the root disk size from 10 GB to 15 GB and verify inside the VM that the OS sees the increased size.
+Attach an additional 10 GB data disk, format and mount it, and ensure it persists across a reboot.
+
+Sol:
+Step 1: Deploy a Small Linux VM (EC2 Instance)
+1. AWS Console > EC2 > Launch Instance
+2. Name: My-First-VM
+3. AMI (OS): Amazon Linux 2023 (free-tier eligible and very stable)
+4. Instance Type: t2.micro or t3.micro
+5. Key Pair: Create one so you can download and save the .pem file.
+6. Storage: By default, it says 8 GB. Ensure Root volume is set to 10 GB.
+7. Click Launch instance.
+
+
+Step 2: Increase the Root Disk to 15 GB
+1. In EC2 sidebar, Elastic Block Store > Volumes.
+2. Find the volume attached to your EC2 instance (it will be 10 GB).
+3. Select it > Actions > Modify Volume
+4. Change size from 10 GB to 15 GB. Click Modify.
+5. Verify inside the VM:
+   5.1 Go to EC2 instance, select the instance created and click on Connect.
+   5.2 To check your disks: lsblk (list info about all available block devices)
+   5.3 Grow the partition: sudo growpart /dev/nvme0n1 1
+   5.4 Grow the filesystem: sudo xfs_growfs / (Amazon Linux) or sudo resize2fs/dev/nvme0n1p1 (For Ubuntu)
+   5.5 Verify df -h. You should now see it as 15 GB.
+
+
+Step 3: Attach and mount a 10 GB Data Disk
+1. To add a second separate "hard drive", in EC2 Sidebar > Volumes > Create Volume.
+2. Size: 10 GB (AZ = EC2 instance AZ)
+3. Once created, right click new volume > Attach Volume. Select your instance and click Attach.
+4. Format and mount: In your terminal/SSH session:
+   4.1 Find the new disk: Run lsblk again. You'll see a new a new 10 GB disk with no partitions (usually /dev/sdb or /dev/nvme1n1).
+   4.2 Format it (XFS): sudo mkfs -t xfs /dev/nvme1n1
+   4.3 Create a mount point: sudo mkdir /data
+   4.4 Mount it: sudo mount /dev/nvme1n1 /data
+
+
+Step 4: Make it persist across reboots
+1. If you reboot, /data folder will be empty because disk is not "auto mounted". We need to edit /etc/fstab file. 
+2. Get the UUID of your new disk: sudo blkid (Copy ID inside quotes for 10 GB disk)
+3. Open config file: sudo nano /etc/fstab
+4. In the config file, add the line: UUID=your-uuid-here /data xfs defaults,nofail 0 2
+5. Save and exit (Ctrl+O,Enter,Ctrl+X)
+6. Test: Run sudo umount /data then sudo mount -a. If no errors, hurray!
